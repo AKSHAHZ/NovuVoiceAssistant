@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+.venv/
+
+# Vosk and LLM models (too large for git)
+models/
+
+# Logs
+logs/
+
+# User memory data
+data/memory.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# macOS
+.DS_Store
+
+# Eval output reports
+eval/*.json
+
+# IDE
+.vscode/
+.idea/
