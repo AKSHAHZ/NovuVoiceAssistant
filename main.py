@@ -25,7 +25,7 @@ from modules.llm              import LLMEngine
 from modules.memory           import MemoryEngine
 
 WAKE_WORDS    = {"hi", "hey novu", "hello novu", "novu", "hey nova"}
-EXIT_PHRASES  = {"exit", "quit", "goodbye", "bye", "stop", "go to sleep", "sleep"}
+EXIT_PHRASES  = {"exit", "quit", "goodbye", "bye", "stop", "go to sleep", "sleep", "power off"}
 CLEAR_PHRASES = {"start over", "clear context", "reset conversation", "new conversation"}
 
 PERSONALITY_REPLIES = {
@@ -46,8 +46,7 @@ def _time_of_day() -> str:
     h = datetime.now().hour
     if h < 12:  return "morning"
     if h < 17:  return "afternoon"
-    if h < 21:  return "evening"
-    return "night"
+    return "evening"
 
 
 def _contains(text: str, phrases) -> bool:
@@ -71,13 +70,14 @@ def pipeline(gui: NovuGUI, shared: dict):
 
     # ── Personalised greeting ──────────────────────────────────────────
     if memory.returning_user() and memory.name:
-        greeting = (f"Good {tod}, {memory.name}! Great to have you back. "
-                    f"Just say hi whenever you're ready.")
+        greeting = (f"Novu online. {memory.name}, whatever's on your mind today, "
+                    f"I'm here for it. Just say hi.")
     elif memory.returning_user():
-        greeting = (f"Good {tod}! Welcome back — just say hi when you're ready.")
+        greeting = ("Novu online. Whatever's on your mind today, "
+                    "I'm here for it. Just say hi.")
     else:
-        greeting = (f"Good {tod}! I'm Novu, your voice companion. "
-                    f"Just say hi to wake me up.")
+        greeting = ("Novu online. Whatever's on your mind today, "
+                    "I'm here for it. Just say hi.")
 
     gui.update_state("sleeping")
     gui.log_sys(f"Session #{memory.data['session_count']} — good {tod}")
@@ -187,7 +187,7 @@ def pipeline(gui: NovuGUI, shared: dict):
 
             emo           = emotion.infer(text, audio_array, stt.sample_rate)
             mem_ctx        = memory.build_context()
-            system_prompt  = persona.build_system_prompt(emo, mem_ctx)
+            system_prompt  = persona.build_system_prompt(emo, mem_ctx, text)
             tts_adj        = persona.get_tts_adjustments(emo)
 
             gui.update_emotion(emo)

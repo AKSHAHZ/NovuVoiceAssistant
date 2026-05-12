@@ -10,8 +10,9 @@ import sounddevice as sd
 from config.settings import TTS_RATE, TTS_VOICE
 
 _SENT_RE        = re.compile(r'(?<=[.!?])\s+')
-_INTERRUPT_RMS  = 0.022   # RMS level that counts as the user speaking
-_INTERRUPT_HOLD = 5       # consecutive loud chunks needed to trigger interrupt
+_INTERRUPT_RMS        = 0.022   # threshold when not playing
+_INTERRUPT_RMS_PLAYING = 0.048  # higher threshold while afplay is running (filters speaker echo)
+_INTERRUPT_HOLD       = 4       # consecutive loud chunks needed to trigger interrupt
 
 # Characters the macOS `say` command mishandles — map to safe equivalents
 _CHAR_MAP = str.maketrans({
@@ -105,18 +106,16 @@ class TextToSpeech:
                 if self._interrupted:
                     raise sd.CallbackStop
 
-                # ── Echo gate ─────────────────────────────────────────
-                # If afplay is currently playing, Novu's own voice from the
-                # speakers would be picked up and falsely trigger an interrupt.
-                # Reset the hold counter and skip until the file finishes.
-                proc = self._proc
-                if proc is not None and proc.poll() is None:
-                    hold_count = 0
-                    return
-
                 arr = np.frombuffer(bytes(indata), dtype=np.int16).astype(np.float32)
                 rms = float(np.sqrt(np.mean((arr / 32768.0) ** 2)))
-                if rms > _INTERRUPT_RMS:
+
+                # While afplay is playing, use a higher threshold to filter
+                # speaker echo — but still allow a loud user voice through
+                proc = self._proc
+                playing = proc is not None and proc.poll() is None
+                threshold = _INTERRUPT_RMS_PLAYING if playing else _INTERRUPT_RMS
+
+                if rms > threshold:
                     hold_count += 1
                     if hold_count >= _INTERRUPT_HOLD:
                         print("[Novu] Interrupt detected — stopping speech")
@@ -156,15 +155,12 @@ class TextToSpeech:
         r = rate or self.default_rate
         self._start_interrupt_monitor()
 
-        sentences = self._split(text) or [text]
         print(f"[Novu] Speaking: '{text[:60]}{'...' if len(text) > 60 else ''}'")
 
-        for s in sentences:
-            if self._interrupted:
-                break
-            path = self._synth(s, r)
-            if path:
-                self._play_q.put(path)
+        # Synthesise the whole response as one file — no sentence gaps
+        path = self._synth(text, r)
+        if path and not self._interrupted:
+            self._play_q.put(path)
 
         self._play_q.join()
         self._speaking.clear()
@@ -189,14 +185,15 @@ class TextToSpeech:
                 buffer     += token
                 full_reply += token
 
+                # Batch all complete sentences into one synthesis call
+                # so there are no gaps between sentences mid-response
                 parts = _SENT_RE.split(buffer)
                 if len(parts) > 1:
-                    for s in parts[:-1]:
-                        s = s.strip()
-                        if s and not self._interrupted:
-                            path = self._synth(s, r)
-                            if path:
-                                self._play_q.put(path)
+                    batch = " ".join(s.strip() for s in parts[:-1] if s.strip())
+                    if batch and not self._interrupted:
+                        path = self._synth(batch, r)
+                        if path:
+                            self._play_q.put(path)
                     buffer = parts[-1]
         except Exception as e:
             print(f"[TTS] Stream error: {e}")
